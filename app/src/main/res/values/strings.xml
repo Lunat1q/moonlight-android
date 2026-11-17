@@ -519,7 +519,7 @@
     <string name="summary_debug_info">Test gamepad vibration and other stuff.</string>
     <string name="title_controller_test">Controller Tester</string>
     <string name="summary_controller_test">See what each button, stick, trigger, touchpad and gyro sends to the host.</string>
-    <string name="controller_test_hint">Press a button on a controller. Use the device\'s Back to exit.</string>
+    <string name="controller_test_hint">Press a button on a controller. Tap the screen to rumble it. Use the device\'s Back to exit.</string>
     <string name="title_touchpad_sensitivity_x">Touchpad Sensitivity X Axis</string>
     <string name="summary_touchpad_sensitivity_x">For mouse touchpad mode and virtual special button touchpad control;\nBoth share a sensitivity value, but the sensitivity performance may be different.\nDoes anyone use both together?</string>
     <string name="title_touchpad_sensitivity_y">Touchpad Sensitivity Y Axis</string>

@@ -68,11 +68,13 @@ public class ControllerTestActivity extends AppCompatActivity {
     private PadView padView;
     private TextView logView;
     private boolean boundUsb;
+    private UsbDriverService.UsbDriverBinder usbBinder;
 
     private final ServiceConnection usbConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             UsbDriverService.UsbDriverBinder binder = (UsbDriverService.UsbDriverBinder) service;
+            usbBinder = binder;
             binder.setListener(controllerHandler);
             binder.start();
         }
@@ -118,11 +120,22 @@ public class ControllerTestActivity extends AppCompatActivity {
         }
 
         addLog(getString(R.string.controller_test_hint));
+
+        // Tap to rumble the controller shown, through the same path a host's rumble takes
+        padView.setOnClickListener(v -> {
+            short n = (short) activePad;
+            controllerHandler.handleRumble(n, (short) 0xFFFF, (short) 0xFFFF);
+            mainHandler.postDelayed(() -> controllerHandler.handleRumble(n, (short) 0, (short) 0), 500);
+            addLog("#" + n + " rumble");
+        });
     }
 
     @Override
     protected void onDestroy() {
         SteamTritonController.rawListener = null;
+        if (usbBinder != null) {
+            usbBinder.setListener(null); // back to driving the menus
+        }
         controllerHandler.destroy();
         if (boundUsb) {
             unbindService(usbConnection);
