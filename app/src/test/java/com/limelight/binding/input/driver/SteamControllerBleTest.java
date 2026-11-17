@@ -71,4 +71,40 @@ public class SteamControllerBleTest {
         assertEquals(ControllerPacket.B_FLAG, buttons);
         assertEquals(-1.0f, lx, 1e-4);
     }
+
+    @Test
+    public void reportsRawTrackpadsToTester() {
+        UsbDriverListener listener = new UsbDriverListener() {
+            public void reportControllerState(int id, int b, float lsx, float lsy, float rsx, float rsy, float l, float r) {}
+            public void reportControllerMotion(int id, byte type, float x, float y, float z) {}
+            public void deviceRemoved(AbstractController c) {}
+            public void deviceAdded(AbstractController c) {}
+        };
+        SteamControllerBle sc = new SteamControllerBle(null, null, 0, listener);
+        int[] got = new int[7];
+        SteamTritonController.rawListener = (btn, lpx, lpy, lpp, rpx, rpy, rpp) -> {
+            got[0] = btn; got[1] = lpx; got[2] = lpy; got[3] = lpp; got[4] = rpx; got[5] = rpy; got[6] = rpp;
+        };
+        try {
+            ByteBuffer b = ByteBuffer.allocate(45).order(ByteOrder.LITTLE_ENDIAN);
+            b.putInt(1, 0x00800000); // a bit the driver doesn't map
+            b.putShort(17, (short) -100);
+            b.putShort(19, (short) 200);
+            b.putShort(21, (short) 0xFFFF); // pressure is unsigned
+            b.putShort(23, (short) 300);
+            b.putShort(25, (short) -400);
+            b.putShort(27, (short) 500);
+            sc.handleInput(b.array());
+        } finally {
+            SteamTritonController.rawListener = null;
+        }
+
+        assertEquals(0x00800000, got[0]);
+        assertEquals(-100, got[1]);
+        assertEquals(200, got[2]);
+        assertEquals(0xFFFF, got[3]);
+        assertEquals(300, got[4]);
+        assertEquals(-400, got[5]);
+        assertEquals(500, got[6]);
+    }
 }

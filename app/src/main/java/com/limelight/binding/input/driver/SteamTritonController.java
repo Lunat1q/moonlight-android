@@ -36,6 +36,13 @@ public abstract class SteamTritonController extends AbstractController {
     private static final float GYRO_SCALE = 2000.0f / 32768.0f;          // -> deg/s
     private static final float ACCEL_SCALE = 2.0f * 9.80665f / 32768.0f; // -> m/s^2
 
+    // Controller tester hook: the raw button word and trackpads, which aren't sent to the host
+    public interface RawListener {
+        void onRawState(int buttons, short leftPadX, short leftPadY, int leftPressure,
+                        short rightPadX, short rightPadY, int rightPressure);
+    }
+    public static volatile RawListener rawListener;
+
     protected volatile short lowFreqMotor, highFreqMotor;
 
     protected SteamTritonController(int deviceId, UsbDriverListener listener, int productId) {
@@ -74,6 +81,13 @@ public abstract class SteamTritonController extends AbstractController {
         }
         ByteBuffer b = ByteBuffer.wrap(data, off, len).slice().order(ByteOrder.LITTLE_ENDIAN);
         int buttons = b.getInt(1);
+
+        RawListener raw = rawListener;
+        if (raw != null && len >= 29) {
+            // Trackpad fields per SDL's TritonMTUNoQuat_t: X, Y, pressure for each pad
+            raw.onRawState(buttons, b.getShort(17), b.getShort(19), b.getShort(21) & 0xFFFF,
+                    b.getShort(23), b.getShort(25), b.getShort(27) & 0xFFFF);
+        }
 
         setButtonFlag(ControllerPacket.A_FLAG, buttons & 0x00000001);
         setButtonFlag(ControllerPacket.B_FLAG, buttons & 0x00000002);
