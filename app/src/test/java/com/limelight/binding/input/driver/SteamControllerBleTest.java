@@ -11,6 +11,9 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.nio.ByteOrder;
 
 @Config(sdk = {33})
@@ -145,5 +148,37 @@ public class SteamControllerBleTest {
         assertEquals(-1.0f, lx, 1e-4);
         assertEquals(0.0f, ly, 1e-4);
         assertEquals(0.0f, rx, 1e-4);
+    }
+
+    @Test
+    public void rightTrackpadAsMouse() {
+        List<String> mouse = new ArrayList<>();
+        UsbDriverListener listener = new UsbDriverListener() {
+            public void reportControllerState(int id, int b, float lsx, float lsy, float rsx, float rsy, float l, float r) {
+                buttons = b; rx = rsx;
+            }
+            public void reportControllerMotion(int id, byte type, float x, float y, float z) {}
+            public void reportControllerMouse(int id, short dx, short dy, boolean left) {
+                mouse.add(dx + "," + dy + (left ? " L" : ""));
+            }
+            public void deviceRemoved(AbstractController c) {}
+            public void deviceAdded(AbstractController c) {}
+        };
+        SteamControllerBle sc = new SteamControllerBle(null, null, 0, listener);
+        sc.setRightPadMouse(true);
+
+        ByteBuffer b = ByteBuffer.allocate(45).order(ByteOrder.LITTLE_ENDIAN);
+        b.putInt(1, SteamTritonController.RPAD_TOUCH);
+        b.putShort(23, (short) 32000);
+        sc.handleInput(b.array());                     // finger lands: no jump
+        b.putShort(23, (short) 32400);
+        b.putShort(25, (short) 400);                    // right and up by 400 units each
+        sc.handleInput(b.array());
+        b.putInt(1, SteamTritonController.RPAD_TOUCH | SteamTritonController.RPAD_CLICK);
+        sc.handleInput(b.array());                     // click without moving
+
+        assertEquals(Arrays.asList("10,-10", "0,0 L"), mouse);
+        assertEquals(0, buttons);                       // no right stick click
+        assertEquals(0.0f, rx, 1e-4);                   // and no right stick motion
     }
 }

@@ -62,6 +62,13 @@ public class UsbDriverService extends Service implements UsbDriverListener {
     }
 
     @Override
+    public void reportControllerMouse(int controllerId, short deltaX, short deltaY, boolean leftButton) {
+        if (listener != null) {
+            listener.reportControllerMouse(controllerId, deltaX, deltaY, leftButton);
+        }
+    }
+
+    @Override
     public void reportControllerMotion(int controllerId, byte motionType, float motionX, float motionY, float motionZ) {
         // Call through to the client's listener
         if (listener != null) {

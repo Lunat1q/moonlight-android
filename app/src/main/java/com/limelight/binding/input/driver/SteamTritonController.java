@@ -49,6 +49,18 @@ public abstract class SteamTritonController extends AbstractController {
 
     protected volatile short lowFreqMotor, highFreqMotor;
 
+    // Right trackpad as a mouse instead of the right stick (set by ControllerHandler from settings)
+    private volatile boolean rightPadMouse;
+    // ponytail: fixed speed, a full swipe across the pad is ~1600 px; add a slider if it feels off
+    private static final float PAD_MOUSE_SCALE = 1 / 40.0f;
+    private boolean padMouseTouching, padMouseButton;
+    private short padMouseLastX, padMouseLastY;
+    private float padMouseRemX, padMouseRemY;
+
+    public void setRightPadMouse(boolean enabled) {
+        rightPadMouse = enabled;
+    }
+
     protected SteamTritonController(int deviceId, UsbDriverListener listener, int productId) {
         super(deviceId, listener, VALVE_VID, productId);
         this.type = MoonBridge.LI_CTYPE_XBOX;
@@ -98,7 +110,9 @@ public abstract class SteamTritonController extends AbstractController {
         setButtonFlag(ControllerPacket.X_FLAG, buttons & 0x00000004);
         setButtonFlag(ControllerPacket.Y_FLAG, buttons & 0x00000008);
         setButtonFlag(ControllerPacket.MISC_FLAG, buttons & 0x00000010); // QAM (...)
-        setButtonFlag(ControllerPacket.RS_CLK_FLAG, buttons & (0x00000020 | RPAD_CLICK)); // or a right pad click
+        boolean padMouse = rightPadMouse;
+        // or a right pad click, unless that pad is the mouse
+        setButtonFlag(ControllerPacket.RS_CLK_FLAG, buttons & (0x00000020 | (padMouse ? 0 : RPAD_CLICK)));
         setButtonFlag(ControllerPacket.PLAY_FLAG, buttons & 0x00000040); // SDL maps this bit to Start
         setButtonFlag(ControllerPacket.PADDLE1_FLAG, buttons & 0x00000080); // R4
         setButtonFlag(ControllerPacket.PADDLE3_FLAG, buttons & 0x00000100); // R5
@@ -125,11 +139,14 @@ public abstract class SteamTritonController extends AbstractController {
             if ((buttons & LPAD_TOUCH) != 0) {
                 applyTrackpad(true, b.getShort(17), b.getShort(19));
             }
-            if ((buttons & RPAD_TOUCH) != 0) {
+            if ((buttons & RPAD_TOUCH) != 0 && !padMouse) {
                 applyTrackpad(false, b.getShort(23), b.getShort(25));
             }
         }
         reportInput();
+        if (padMouse && len >= 29) {
+            handlePadMouse(buttons, b.getShort(23), b.getShort(25));
+        }
 
         if (len >= 45) {
             // Same axis remap SDL applies, which is the convention Moonlight hosts expect
@@ -164,11 +181,42 @@ public abstract class SteamTritonController extends AbstractController {
         }
     }
 
+    // Relative motion while the finger is down, like a laptop touchpad; a pad click is a left click
+    private void handlePadMouse(int buttons, short x, short y) {
+        boolean touching = (buttons & RPAD_TOUCH) != 0;
+        short dx = 0, dy = 0;
+        if (touching && padMouseTouching) {
+            padMouseRemX += (x - padMouseLastX) * PAD_MOUSE_SCALE;
+            padMouseRemY += (padMouseLastY - y) * PAD_MOUSE_SCALE; // pad Y is up-positive, mouse Y down
+            dx = (short) padMouseRemX;
+            dy = (short) padMouseRemY;
+            padMouseRemX -= dx;
+            padMouseRemY -= dy;
+        }
+        else {
+            padMouseRemX = padMouseRemY = 0;
+        }
+        padMouseTouching = touching;
+        padMouseLastX = x;
+        padMouseLastY = y;
+
+        boolean button = (buttons & RPAD_CLICK) != 0;
+        if (dx != 0 || dy != 0 || button != padMouseButton) {
+            padMouseButton = button;
+            reportMouse(dx, dy, button);
+        }
+    }
+
     // Controller went out of range or to sleep: release everything so nothing sticks held
     protected void reportNeutral() {
         buttonFlags = 0;
         leftTrigger = rightTrigger = 0;
         leftStickX = leftStickY = rightStickX = rightStickY = 0;
         reportInput();
+        padMouseTouching = false;
+        if (padMouseButton) {
+            padMouseButton = false;
+            reportMouse((short) 0, (short) 0, false);
+        }
     }
 }
