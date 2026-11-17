@@ -12,7 +12,6 @@ import android.view.View;
 
 import java.lang.ref.WeakReference;
 
-import com.limelight.LimeLog;
 import com.limelight.nvstream.input.ControllerPacket;
 
 // Android never sees driver-owned controllers (e.g. the Steam Controller) as gamepads, so while
@@ -72,7 +71,6 @@ public class MenuNavigator {
         handler.post(() -> {
             Activity activity = target.get();
             if (activity == null || activity.isFinishing()) {
-                LimeLog.info("MenuNavigator: " + KeyEvent.keyCodeToString(keyCode) + " dropped, no activity");
                 return;
             }
 
@@ -85,11 +83,7 @@ public class MenuNavigator {
                 return;
             }
 
-            boolean handled = activity.dispatchKeyEvent(event);
-            LimeLog.info("MenuNavigator: " + KeyEvent.keyCodeToString(keyCode) + (down ? " down" : " up") +
-                    " -> " + activity.getClass().getSimpleName() + " handled=" + handled +
-                    " focus=" + activity.getCurrentFocus());
-            if (handled || !down) {
+            if (activity.dispatchKeyEvent(event) || !down) {
                 return;
             }
 
