@@ -12,6 +12,7 @@ import android.view.View;
 
 import java.lang.ref.WeakReference;
 
+import com.limelight.LimeLog;
 import com.limelight.nvstream.input.ControllerPacket;
 
 // Android never sees driver-owned controllers (e.g. the Steam Controller) as gamepads, so while
@@ -70,7 +71,25 @@ public class MenuNavigator {
                 KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_DPAD);
         handler.post(() -> {
             Activity activity = target.get();
-            if (activity == null || activity.isFinishing() || activity.dispatchKeyEvent(event) || !down) {
+            if (activity == null || activity.isFinishing()) {
+                LimeLog.info("MenuNavigator: " + KeyEvent.keyCodeToString(keyCode) + " dropped, no activity");
+                return;
+            }
+
+            // Activities that opt into OnBackInvokedCallback never turn a BACK key event into a back
+            // press (Android 13+), so press back directly on release
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                if (!down) {
+                    activity.onBackPressed();
+                }
+                return;
+            }
+
+            boolean handled = activity.dispatchKeyEvent(event);
+            LimeLog.info("MenuNavigator: " + KeyEvent.keyCodeToString(keyCode) + (down ? " down" : " up") +
+                    " -> " + activity.getClass().getSimpleName() + " handled=" + handled +
+                    " focus=" + activity.getCurrentFocus());
+            if (handled || !down) {
                 return;
             }
 
