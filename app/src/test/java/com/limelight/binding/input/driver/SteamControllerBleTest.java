@@ -17,7 +17,7 @@ import java.nio.ByteOrder;
 @RunWith(RobolectricTestRunner.class)
 public class SteamControllerBleTest {
     private int buttons;
-    private float lx, ly, lt, gyroY;
+    private float lx, ly, rx, ry, lt, gyroY;
 
     @Test
     public void parsesTritonStateReport() {
@@ -106,5 +106,44 @@ public class SteamControllerBleTest {
         assertEquals(300, got[4]);
         assertEquals(-400, got[5]);
         assertEquals(500, got[6]);
+    }
+
+    @Test
+    public void trackpadsDriveTheSticks() {
+        UsbDriverListener listener = new UsbDriverListener() {
+            public void reportControllerState(int id, int b, float lsx, float lsy, float rsx, float rsy, float l, float r) {
+                buttons = b; lx = lsx; ly = lsy; rx = rsx; ry = rsy;
+            }
+            public void reportControllerMotion(int id, byte type, float x, float y, float z) {}
+            public void deviceRemoved(AbstractController c) {}
+            public void deviceAdded(AbstractController c) {}
+        };
+        SteamControllerBle sc = new SteamControllerBle(null, null, 0, listener);
+
+        // Left pad touched at the top edge and clicked, right pad in the top-right corner
+        ByteBuffer b = ByteBuffer.allocate(45).order(ByteOrder.LITTLE_ENDIAN);
+        b.putInt(1, SteamTritonController.LPAD_TOUCH | SteamTritonController.LPAD_CLICK | SteamTritonController.RPAD_TOUCH);
+        b.putShort(19, (short) 32767);
+        b.putShort(23, (short) 32767);
+        b.putShort(25, (short) 32767);
+        sc.handleInput(b.array());
+
+        assertEquals(ControllerPacket.LS_CLK_FLAG, buttons);
+        assertEquals(0.0f, lx, 1e-4);
+        assertEquals(-1.0f, ly, 1e-4);            // up, in the drivers' down-positive Y
+        assertEquals(0.7071f, rx, 1e-3);          // corner pulled onto the unit circle
+        assertEquals(-0.7071f, ry, 1e-3);
+
+        // A stick pushed further than the pad wins; an untouched pad is ignored
+        b.putInt(1, SteamTritonController.LPAD_TOUCH);
+        b.putShort(9, (short) -32767);            // left stick full left
+        b.putShort(19, (short) 3000);             // pad barely above center
+        b.putShort(23, (short) 32767);            // right pad coordinates without its touch bit
+        sc.handleInput(b.array());
+
+        assertEquals(0, buttons);
+        assertEquals(-1.0f, lx, 1e-4);
+        assertEquals(0.0f, ly, 1e-4);
+        assertEquals(0.0f, rx, 1e-4);
     }
 }

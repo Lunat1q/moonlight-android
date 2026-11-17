@@ -21,6 +21,10 @@ public abstract class SteamTritonController extends AbstractController {
 
     static final int ID_OUT_RUMBLE = 0x80;
 
+    // Trackpad bits in the button word (measured on hardware; the click fires past ~10% pressure)
+    static final int LPAD_TOUCH = 0x02000000, LPAD_CLICK = 0x04000000;
+    static final int RPAD_TOUCH = 0x00200000, RPAD_CLICK = 0x00400000;
+
     // Feature report body (after the report ID byte): ID_SET_SETTINGS_VALUES with
     // SETTING_LIZARD_MODE(9)=OFF and SETTING_IMU_MODE(48)=RAW_ACCEL|RAW_GYRO.
     // The controller re-enables lizard mode on its own if this isn't resent within a few
@@ -94,7 +98,7 @@ public abstract class SteamTritonController extends AbstractController {
         setButtonFlag(ControllerPacket.X_FLAG, buttons & 0x00000004);
         setButtonFlag(ControllerPacket.Y_FLAG, buttons & 0x00000008);
         setButtonFlag(ControllerPacket.MISC_FLAG, buttons & 0x00000010); // QAM (...)
-        setButtonFlag(ControllerPacket.RS_CLK_FLAG, buttons & 0x00000020);
+        setButtonFlag(ControllerPacket.RS_CLK_FLAG, buttons & (0x00000020 | RPAD_CLICK)); // or a right pad click
         setButtonFlag(ControllerPacket.PLAY_FLAG, buttons & 0x00000040); // SDL maps this bit to Start
         setButtonFlag(ControllerPacket.PADDLE1_FLAG, buttons & 0x00000080); // R4
         setButtonFlag(ControllerPacket.PADDLE3_FLAG, buttons & 0x00000100); // R5
@@ -104,7 +108,7 @@ public abstract class SteamTritonController extends AbstractController {
         setButtonFlag(ControllerPacket.LEFT_FLAG, buttons & 0x00001000);
         setButtonFlag(ControllerPacket.UP_FLAG, buttons & 0x00002000);
         setButtonFlag(ControllerPacket.BACK_FLAG, buttons & 0x00004000); // SDL maps this bit to Back
-        setButtonFlag(ControllerPacket.LS_CLK_FLAG, buttons & 0x00008000);
+        setButtonFlag(ControllerPacket.LS_CLK_FLAG, buttons & (0x00008000 | LPAD_CLICK)); // or a left pad click
         setButtonFlag(ControllerPacket.SPECIAL_BUTTON_FLAG, buttons & 0x00010000); // Steam
         setButtonFlag(ControllerPacket.PADDLE2_FLAG, buttons & 0x00020000); // L4
         setButtonFlag(ControllerPacket.PADDLE4_FLAG, buttons & 0x00040000); // L5
@@ -117,6 +121,14 @@ public abstract class SteamTritonController extends AbstractController {
         leftStickY = -b.getShort(11) / 32767.0f;
         rightStickX = b.getShort(13) / 32767.0f;
         rightStickY = -b.getShort(15) / 32767.0f;
+        if (len >= 29) {
+            if ((buttons & LPAD_TOUCH) != 0) {
+                applyTrackpad(true, b.getShort(17), b.getShort(19));
+            }
+            if ((buttons & RPAD_TOUCH) != 0) {
+                applyTrackpad(false, b.getShort(23), b.getShort(25));
+            }
+        }
         reportInput();
 
         if (len >= 45) {
@@ -128,6 +140,27 @@ public abstract class SteamTritonController extends AbstractController {
             gyroY = b.getShort(43) * GYRO_SCALE;
             gyroZ = -b.getShort(41) * GYRO_SCALE;
             reportMotion();
+        }
+    }
+
+    // Hosts have no trackpads on an Xbox pad, so a touched pad drives the stick on its side,
+    // by absolute finger position. Whichever of the pad and the stick is pushed further wins.
+    private void applyTrackpad(boolean left, short rawX, short rawY) {
+        // Same up-positive Y as the sticks; the pads are square, so pull the corners onto the circle
+        float x = rawX / 32767.0f, y = -rawY / 32767.0f;
+        float magnitude = (float) Math.hypot(x, y);
+        if (magnitude > 1) {
+            x /= magnitude;
+            y /= magnitude;
+            magnitude = 1;
+        }
+        if (left && magnitude > Math.hypot(leftStickX, leftStickY)) {
+            leftStickX = x;
+            leftStickY = y;
+        }
+        else if (!left && magnitude > Math.hypot(rightStickX, rightStickY)) {
+            rightStickX = x;
+            rightStickY = y;
         }
     }
 
