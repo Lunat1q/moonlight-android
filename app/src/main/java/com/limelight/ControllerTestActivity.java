@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.SparseArray;
 import android.util.TypedValue;
@@ -61,6 +62,8 @@ public class ControllerTestActivity extends AppCompatActivity {
     private volatile short activeMask;
     private volatile String rawAxes = "";
     private volatile String steamRaw = "";
+    private int lastRawButtons;
+    private long lastRawLogMs;
     private final ArrayDeque<String> log = new ArrayDeque<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -110,8 +113,16 @@ public class ControllerTestActivity extends AppCompatActivity {
         controllerHandler = new ControllerHandler(this, new CaptureConnection(this), () -> {}, prefConfig);
 
         SteamTritonController.rawListener = (buttons, lpx, lpy, lpp, rpx, rpy, rpp) -> {
-            steamRaw = String.format(Locale.US, "Steam raw: buttons %08x  L pad %d,%d p%d  R pad %d,%d p%d",
+            String raw = String.format(Locale.US, "Steam raw: buttons %08x  L pad %d,%d p%d  R pad %d,%d p%d",
                     buttons, lpx, lpy, lpp, rpx, rpy, rpp);
+            // Also to logcat (button changes immediately, pad motion at most 10x/s) for adb debugging
+            long now = SystemClock.uptimeMillis();
+            if (!raw.equals(steamRaw) && (buttons != lastRawButtons || now - lastRawLogMs >= 100)) {
+                LimeLog.info(raw);
+                lastRawButtons = buttons;
+                lastRawLogMs = now;
+            }
+            steamRaw = raw;
             padView.postInvalidate();
         };
 
