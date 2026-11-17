@@ -437,7 +437,6 @@ public class UsbDriverService extends Service implements UsbDriverListener {
         stateListener = null;
 
         menuNavigator.releaseAll();
-        menuNavigator.quit();
     }
 
     @Override

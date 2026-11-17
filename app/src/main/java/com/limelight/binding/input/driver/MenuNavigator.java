@@ -1,20 +1,27 @@
 package com.limelight.binding.input.driver;
 
-import android.app.Instrumentation;
+import android.app.Activity;
 import android.os.Handler;
-import android.os.HandlerThread;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.SparseIntArray;
 import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
+import android.view.View;
+
+import java.lang.ref.WeakReference;
 
 import com.limelight.nvstream.input.ControllerPacket;
 
 // Android never sees driver-owned controllers (e.g. the Steam Controller) as gamepads, so while
 // no stream is using them, turn their D-pad, left stick, A and B into key presses for our own UI.
-// ponytail: no key repeat while held; add a repeat timer if scrolling long lists gets tedious.
-class MenuNavigator {
+// Apps can't inject input (INJECT_EVENTS), so keys go straight to the visible activity.
+// ponytail: dialogs are separate windows and don't get these keys; no key repeat while held.
+public class MenuNavigator {
+    // The Artemis activity in front, set by ArtemisApplication (null while streaming or in the background)
+    public static volatile WeakReference<Activity> target = new WeakReference<>(null);
+
     private static final float STICK_THRESHOLD = 0.5f;
     private static final int[][] KEYS = {
             {ControllerPacket.UP_FLAG, KeyEvent.KEYCODE_DPAD_UP},
@@ -26,9 +33,7 @@ class MenuNavigator {
     };
 
     private final SparseIntArray pressed = new SparseIntArray(); // controller id -> flags
-    private final Instrumentation instrumentation = new Instrumentation();
-    private HandlerThread thread;
-    private Handler handler;
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     // Driver threads call this with the raw driver state (stick Y is down-positive)
     synchronized void update(int controllerId, int buttons, float leftStickX, float leftStickY) {
@@ -60,29 +65,35 @@ class MenuNavigator {
     }
 
     void inject(int keyCode, boolean down) { // package-private for MenuNavigatorTest
-        if (handler == null) {
-            // sendKeySync blocks and must stay off the main thread
-            thread = new HandlerThread("MenuNavigator");
-            thread.start();
-            handler = new Handler(thread.getLooper());
-        }
         long now = SystemClock.uptimeMillis();
         KeyEvent event = new KeyEvent(now, now, down ? KeyEvent.ACTION_DOWN : KeyEvent.ACTION_UP, keyCode, 0, 0,
-                KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD);
+                KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_DPAD);
         handler.post(() -> {
-            try {
-                // Only lands in our own windows; fails when another app is focused, which is fine
-                instrumentation.sendKeySync(event);
-            } catch (RuntimeException ignored) {
+            Activity activity = target.get();
+            if (activity == null || activity.isFinishing() || activity.dispatchKeyEvent(event) || !down) {
+                return;
+            }
+
+            // Nobody consumed the arrow: move focus the way the framework would for a real D-pad
+            int direction = focusDirection(keyCode);
+            if (direction == 0) {
+                return;
+            }
+            View focused = activity.getCurrentFocus();
+            View next = focused != null ? focused.focusSearch(direction) : activity.getWindow().getDecorView();
+            if (next != null) {
+                next.requestFocusFromTouch();
             }
         });
     }
 
-    synchronized void quit() {
-        if (thread != null) {
-            thread.quitSafely();
-            thread = null;
-            handler = null;
+    private static int focusDirection(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_DPAD_UP: return View.FOCUS_UP;
+            case KeyEvent.KEYCODE_DPAD_DOWN: return View.FOCUS_DOWN;
+            case KeyEvent.KEYCODE_DPAD_LEFT: return View.FOCUS_LEFT;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: return View.FOCUS_RIGHT;
+            default: return 0;
         }
     }
 }

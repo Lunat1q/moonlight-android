@@ -10,6 +10,9 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.widget.Toast;
 
+import java.lang.ref.WeakReference;
+
+import com.limelight.binding.input.driver.MenuNavigator;
 import com.limelight.binding.input.driver.UsbDriverService;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.profiles.ProfilesManager;
@@ -58,8 +61,21 @@ public class ArtemisApplication extends Application {
             }
 
             @Override public void onActivityCreated(Activity activity, Bundle savedInstanceState) {}
-            @Override public void onActivityResumed(Activity activity) {}
-            @Override public void onActivityPaused(Activity activity) {}
+            @Override
+            public void onActivityResumed(Activity activity) {
+                // Game hands its keys to the host, so the menus' fake D-pad must never reach it
+                if (!(activity instanceof Game)) {
+                    MenuNavigator.target = new WeakReference<>(activity);
+                }
+            }
+
+            @Override
+            public void onActivityPaused(Activity activity) {
+                if (MenuNavigator.target.get() == activity) {
+                    MenuNavigator.target = new WeakReference<>(null);
+                }
+            }
+
             @Override public void onActivitySaveInstanceState(Activity activity, Bundle outState) {}
             @Override public void onActivityDestroyed(Activity activity) {}
         });
